@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>Line Chart</title>
+    <script src="https://d3js.org/d3.v6.min.js"></script>
+    <style>
+        /* Style for the tooltip */
+        .tooltip {
+            position: absolute;
+            background: rgba(0, 0, 0, 0.8);
+            color: #fff;
+            padding: 8px;
+            border-radius: 2px;
+            pointer-events: none;
+            font-size: 12px;
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+
+        .line {
+            fill: none;
+            stroke-width: 1.5;
+            opacity: 0.7; /* Initial opacity for all lines */
+            transition: opacity 0.3s;
+        }
+
+        .line:hover {
+            opacity: 1 !important; /* Full opacity on hover */
+            stroke-width: 2.5; /* Highlight thickness on hover */
+        }
+
+        .inactive {
+            opacity: 0.2 !important; /* Reduced opacity for inactive lines */
+        }
+
+        .state-label {
+            font-size: 12px;
+            dominant-baseline: middle;
+            pointer-events: none;
+        }
+
+        .controls {
+            display: flex;
+            flex-direction: column;
+            align-items: flex-start;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="controls">
+        <label for="vehicleType">Vehicle Type:</label>
+        <select id="vehicleType" onchange="updateChart()">
+            <option value="Electric (EV)">Electric (EV)</option>
+            <option value="Plug-In Hybrid Electric (PHEV)">Plug-In Hybrid Electric (PHEV)</option>
+            <option value="Hybrid Electric (HEV)">Hybrid Electric (HEV)</option>
+        </select>
+    </div>
+
+    <script>
+        var w = 800; // Increased width for better visualization
+        var h = 600; // Increased height for better visualization
+        var padding = 100; // Increased padding from top and left
+
+        // Shift the entire graph down by 30 units
+        var shiftDown = 30;
+
+        var parseYear = d3.timeParse("%Y");
+
+        var x = d3.scaleTime().range([padding, w - padding]);
+        var y = d3.scaleLinear().range([h - padding - shiftDown, padding]);
+
+        // Manually define an array of 50 distinct colors
+        var colorArray = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd',
+            '#8c564b', '#e377c2', '#7f7f7f', '#bcbd22', '#17becf',
+            '#aec7e8', '#ffbb78', '#98df8a', '#ff9896', '#c5b0d5',
+            '#c49c94', '#f7b6d2', '#c7c7c7', '#dbdb8d', '#9edae5',
+            '#1f78b4', '#ff7f00', '#33a02c', '#e31a1c', '#6a3d9a',
+            '#a6cee3', '#fdbf6f', '#b2df8a', '#cab2d6', '#ffeda0',
+            '#636363', '#fb9a99', '#bcbd22', '#b3de69', '#fdbf6f',
+            '#a6cee3', '#1f78b4', '#33a02c', '#e31a1c', '#ff7f00',
+            '#a6cee3', '#1f78b4', '#b2df8a', '#fb9a99', '#fdbf6f'
+        ];
+
+        var colorScale = d3.scaleOrdinal().range(colorArray);
+
+        var line = d3.line()
+            .x(function (d) { return x(d.date); })
+            .y(function (d) { return y(d.value); });
+
+        var svg = d3.select("body")
+            .append("svg")
+            .attr("width", w)
+            .attr("height", h)
+            .append("g") // Create a group element for the entire graph
+            .attr("transform", "translate(0," + shiftDown + ")"); // Apply the shift down
+
+        // Create a tooltip
+        var tooltip = d3.select("body")
+            .append("div")
+            .attr("class", "tooltip")
+            .style("opacity", 0);
+
+        // Define stateData as a global variable
+        var stateData;
+
+        d3.csv("merged_data.csv").then(function (data) {
+            // Log the loaded data for debugging
+            console.log("Loaded Data:", data);
+
+            // Extract unique states from the data
+            var states = Array.from(new Set(data.map(function (d) { return d.State; })));
+
+            // Create an array to hold data for each state
+            stateData = states.map(function (state) {
+                var stateLine = data.filter(function (d) {
+                    return d.State === state;
+                });
+
+                stateLine.forEach(function (d) {
+                    d.date = parseYear(d.Year);
+                    d.value = +d['Electric (EV)'];
+                });
+
+                return {
+                    state: state,
+                    data: stateLine
+                };
+            });
+
+            // Log the processed data for debugging
+            console.log("Processed Data:", stateData);
+
+            // Determine the overall domain for x and y scales
+            x.domain(d3.extent(data, function (d) { return d.date; }));
+            y.domain([0, 1500000]); // Set Y-axis domain from 0 to 15000000
+
+            // Append the x-axis
+            svg.append("g")
+                .attr("transform", "translate(0," + (h - padding - shiftDown) + ")")
+                .call(d3.axisBottom(x).tickFormat(d3.timeFormat("%Y")));
+
+            // Append the y-axis
+            svg.append("g")
+                .attr("class", "y-axis") // Added class for easy selection during update
+                .attr("transform", "translate(" + padding + ",0)")
+                .call(d3.axisLeft(y).tickValues(d3.range(0, 1500000, 100000)));
+
+            // Append a line for each state with a unique color
+            svg.selectAll(".line")
+                .data(stateData)
+                .enter()
+                .append("path")
+                .attr("class", "line")
+                .attr("stroke", function (d) {
+                    return colorScale(d.state);
+                })
+                .attr("d", function (d) { return line(d.data); })
+                .on('mouseover', function (event, d) {
+                    d3.selectAll(".line")
+                        .classed("inactive", function (e) {
+                            return e.state !== d.state;
+                        });
+
+                    // Display state label at the end of the line
+                    svg.append("text")
+                        .attr("class", "state-label")
+                        .attr("x", x(d.data[d.data.length - 1].date) + 10)
+                        .attr("y", y(d.data[d.data.length - 1].value))
+                        .style("fill", colorScale(d.state))
+                        .text(d.state);
+                })
+                .on('mouseout', function () {
+                    // Hide tooltip and reset line styles on mouseout
+                    tooltip.transition()
+                        .duration(500)
+                        .style("opacity", 0);
+
+                    d3.selectAll(".line")
+                        .classed("inactive", false);
+
+                    // Remove state labels on mouseout
+                    svg.selectAll(".state-label").remove();
+                });
+        }).catch(function (error) {
+            // Log any errors for debugging
+            console.error("Error:", error);
+        });
+
+        function updateChart() {
+            var selectedVehicleType = document.getElementById("vehicleType").value;
+
+            // Update the lines based on the selected vehicle type
+            svg.selectAll(".line")
+                .data(stateData)
+                .transition()
+                .duration(500)
+                .attr("d", function (d) {
+                    return line(d.data.map(function (item) {
+                        return { date: item.date, value: +item[selectedVehicleType] };
+                    }));
+                });
+        }
+    </script>
+</body>
+
+</html>

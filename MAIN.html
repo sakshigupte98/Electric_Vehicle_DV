@@ -1,0 +1,402 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Evolution of vehicle registrations by fuel type</title>
+    <script src="https://d3js.org/d3.v6.min.js"></script>
+    <script src="https://d3js.org/topojson.v2.min.js"></script>
+    <style>
+        .container {
+            display: flex;
+            align-items: flex-start;
+            justify-content: center;
+            flex-direction: column;
+        }
+
+        .map-container {
+            display: flex;
+        }
+
+        #tooltip {
+            opacity: 0;
+            background-color: #f5f3f0;
+            position: absolute;
+            font-family: sans-serif;
+            font-size: medium;
+            width: 300px;
+            height: 40px;
+            border-radius: 20px;
+        }
+
+        #caption {
+            margin: auto;
+            padding-top: 1%;
+            padding-bottom: 1%;
+            padding-left: 4%;
+            font-family: sans-serif;
+            font-size: 3rem;
+            color: grey;
+        }
+
+        #canvas {
+            width: 70vw;
+            height: 80vh;
+            background-color: #fffefe;
+        }
+
+        path.path_geo {
+            stroke-width: 0.5px;
+            stroke: black;
+            fill-opacity: .9;
+        }
+
+        path.path_geo:hover {
+            fill: yellow;
+        }
+
+        #barChart {
+            margin-top: 20px;
+        }
+
+        .chart-container {
+            flex: 1;
+            padding-left: 20px;
+        }
+        h2 {
+            color: #333; /* Adjust the title color */
+            margin-bottom: 10px; /* Add margin below the title */
+        }
+
+        /* Style for the buttons */
+        .button-container {
+            margin-top: 10px; /* Add margin above the button container */
+        }
+
+        button {
+            background-color: #4c8caf; 
+            color: white;
+            padding: 10px 20px; /* Add padding to the buttons */
+            margin-right: 10px; /* Add margin between the buttons */
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: background-color 0.3s ease; /* Smooth transition on hover */
+        }
+
+        button:hover {
+            background-color: #45a049; /* Darker green on hover */
+        }
+        select {
+            padding: 5px;
+            font-size: 13px;
+            border: 1px solid #5e72e4; /* Border color */
+            border-radius: 3px;
+            margin-bottom: 8px;
+            background-color: #d1d8ff; /* Background color */
+            color: #2d3d63; /* Text color */
+        }
+
+        /* Hover effect */
+        select:hover {
+            background-color: #a3b7f9; /* Lighter background color on hover */
+        }
+        .dropdown-container {
+            margin: 0 auto;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            flex-direction: column;
+        }
+
+        .dropdown-container div {
+            margin-bottom: 10px;
+            /* Optional: Add some spacing between the dropdowns */
+        }
+
+        .dropdown-container select {
+            width: 150px;
+        }
+
+        #barChartTooltip {
+            background-color: #f5f3f0;
+            font-family: sans-serif;
+            font-size: medium;
+            padding: 8px;
+            border-radius: 8px;
+            pointer-events: none;
+            /* Ensure the tooltip doesn't interfere with mouse events on bars */
+            position: absolute;
+            opacity: 0;
+        }
+    </style>
+</head>
+
+<body>
+
+<div class="container">
+    <div id="caption">
+        Evolution of vehicle registrations by fuel type
+    </div>
+    <div class="dropdown-container">
+        <div>
+            <label for="yearSelect">Year:</label>
+            <select id="yearSelect"></select>
+            <label for="typeSelect">Vehicle Type:</label>
+            <select id="typeSelect"></select>
+        </div>
+    </div>
+    <!-- Buttons for Visualization and Interactive Line Charts -->
+    <h2>Visualization</h2>
+    
+        <!-- Buttons for Interactive Line Charts -->
+        <div class="button-container">
+            <button id="lineChartAllStatesButton" onclick="window.location.href='all_vehicle_types.html'">Interactive Line Chart (All States)</button>
+        </div>
+    
+        <div class="button-container">
+            <button id="lineChartEachStateButton" onclick="window.location.href='interactive.html'">Interactive Line Chart (Each State)</button>
+        </div>
+    
+        <div class="button-container">
+            <button id="streamgraph" onclick="window.location.href='stream.html'">Stream Graph</button>
+        </div>
+    <div class="map-container">
+        <svg id="canvas" width="100%" height="100%" viewBox="0 0 1000 800"></svg>
+        <div>
+            <label for="stateSelect">State:</label>
+            <select id="stateSelect"></select>
+
+            <div id="barChart" class="chart-container"></div>
+        </div>
+    </div>
+</div>
+
+<div id="tooltip">
+    <svg id="svg_tooltip" width="100%" height="100%" viewBox="0 0 220 100"></svg>
+</div>
+
+<div id="barChartTooltip"></div>
+
+<script>
+    let geojsonUrl = "US_STATES.json";
+    let csvDataUrl = "merged_data.csv";
+
+    Promise.all([d3.json(geojsonUrl), d3.csv(csvDataUrl)]).then(function (data) {
+        let [usStates, vehicleData] = data;
+
+        // Process vehicle data
+        let years = Array.from(new Set(vehicleData.map(d => +d['Year'])));
+        let types = ['EV', 'PHEV', 'HEV'];
+
+        let selectedYear = years[0];
+        let selectedType = types[0];
+        let states = Array.from(new Set(vehicleData.map(d => d['State'])));
+
+        d3.select("#stateSelect")
+            .selectAll("option")
+            .data(states)
+            .enter()
+            .append("option")
+            .text(d => d)
+            .attr("value", d => d);
+
+        d3.select("#yearSelect")
+            .selectAll("option")
+            .data(years)
+            .enter()
+            .append("option")
+            .text(d => d)
+            .attr("value", d => d)
+            .property("selected", d => d === selectedYear);
+
+        d3.select("#typeSelect")
+            .selectAll("option")
+            .data(types)
+            .enter()
+            .append("option")
+            .text(d => d)
+            .attr("value", d => d)
+            .property("selected", d => d === selectedType);
+
+        d3.select("#yearSelect").on("change", function () {
+            selectedYear = +this.value;
+            updateMap();
+        });
+
+        d3.select("#typeSelect").on("change", function () {
+            selectedType = this.value;
+            updateMap();
+        });
+
+        updateMap();
+
+        function updateMap() {
+            let svg = d3.select('#canvas');
+            let vehicleDatas = vehicleData.filter(d => +d.Year === selectedYear);
+            let vehicleDataByState = {};
+
+            vehicleDatas.forEach(d => {
+                vehicleDataByState[+d['id']] = {
+                    'EV': +d['Electric (EV)'],
+                    'PHEV': +d['Plug-In Hybrid Electric (PHEV)'],
+                    'HEV': +d['Hybrid Electric (HEV)'],
+                    'Year': +d['Year']
+                };
+            });
+
+            let registrations = Object.values(vehicleDataByState).map(d => d[selectedType] || 0);
+            let colorScale = d3.scaleQuantile()
+                .domain(registrations)
+                .range(d3.schemeBlues[9]);
+
+            let projection = d3.geoAlbersUsa().translate([500, 400]).scale(1000);
+            let path = d3.geoPath().projection(projection);
+
+            usStates.features = topojson.feature(usStates, usStates.objects.states).features;
+
+            svg.selectAll(".state")
+                .data(usStates.features)
+                .join("path")
+                .attr("class", "path_geo")
+                .attr("d", path)
+                .style("fill", d => {
+                    let stateID = +d.id;
+                    let stateData = vehicleDataByState[stateID];
+                    let registrations = stateData ? stateData[selectedType] || 0 : 0;
+                    return colorScale(registrations);
+                })
+                .on("mouseover", function (event, d) {
+                    d3.select(this).classed("hovered", true);
+
+                    const stateName = d.properties.name;
+                    const stateID = +d.id;
+                    const stateData = vehicleDataByState[stateID];
+                    const registrations = stateData ? stateData[selectedType] || 0 : 0;
+
+                    const tooltipText = `${stateName} (${selectedYear}, ${selectedType}): ${registrations} registrations`;
+
+                    d3.select("#tooltip")
+                        .style("opacity", 1)
+                        .html(tooltipText)
+                        .style("left", (event.pageX + 10) + "px")
+                        .style("top", (event.pageY - 28) + "px");
+                })
+                .on("mouseout", function () {
+                    d3.select(this).classed("hovered", false);
+
+                    d3.select("#tooltip").style("opacity", 0);
+                })
+                .on("click", function (event, d) {
+                    let stateName = d.properties.name;
+                    d3.select("#stateSelect").property("value", stateName);
+                    updateBarChartForState(stateName);
+                });
+
+            d3.select("#stateSelect").on("change", function () {
+                let selectedState = this.value;
+                updateBarChartForState(selectedState);
+            });
+
+            function updateBarChartForState(stateName) {
+                let stateID = vehicleData.find(d => d['State'] === stateName).id;
+
+                const dataForBarChart = years.map(year => {
+                    const yearData = vehicleData.find(row => +row['Year'] === parseInt(year) && +row['id'] === parseInt(stateID));
+                    let type = '';
+                    if (selectedType === 'EV')
+                        type = 'Electric (EV)';
+                    else if (selectedType === 'PHEV')
+                        type = 'Plug-In Hybrid Electric (PHEV)';
+                    else
+                        type = 'Hybrid Electric (HEV)';
+
+                    return {
+                        year: year,
+                        value: yearData ? +yearData[type] : 0
+                    };
+                });
+
+                drawBarChart(dataForBarChart, stateName);
+            }
+
+            function drawBarChart(data, stateName) {
+                d3.select("#barChart").selectAll("*").remove();
+
+                const margin = {
+                    top: 20,
+                    right: 20,
+                    bottom: 30,
+                    left: 40
+                };
+                const width = 400 - margin.left - margin.right;
+                const height = 300 - margin.top - margin.bottom;
+
+                const svg = d3.select("#barChart")
+                    .append("svg")
+                    .attr("width", width + margin.left + margin.right)
+                    .attr("height", height + margin.top + margin.bottom)
+                    .append("g")
+                    .attr("transform", `translate(${margin.left},${margin.top})`);
+
+                const x = d3.scaleBand()
+                    .rangeRound([0, width])
+                    .padding(0.1)
+                    .domain(data.map(d => d.year.toString()));
+
+                svg.append("g")
+                    .attr("transform", `translate(0,${height})`)
+                    .call(d3.axisBottom(x));
+
+                function formatTick(d) {
+                    return (d / 1000) + 'k';
+                }
+
+                const y = d3.scaleLinear()
+                    .rangeRound([height, 0])
+                    .domain([0, d3.max(data, d => d.value)]);
+
+                const yAxisGroup = svg.append("g")
+                    .call(d3.axisLeft(y).tickFormat(formatTick));
+                yAxisGroup.append("text")
+                    .attr("transform", "rotate(-90)")
+                    .attr("y", -100)
+                    .attr("x", 0 - (height / 2))
+                    .attr("dy", "1em")
+                    .attr("text-anchor", "middle")
+                    .text("Vehicles");
+
+                svg.selectAll(".bar")
+                    .data(data)
+                    .enter().append("rect")
+                    .attr("class", "bar")
+                    .attr("x", d => x(d.year.toString()))
+                    .attr("y", d => y(d.value))
+                    .attr("width", x.bandwidth())
+                    .attr("height", d => height - y(d.value))
+                    .attr("fill", "darkorange")
+                    .on("mouseover", function (event, d) {
+                        const type = selectedType;
+                        const year = d.year;
+                        const registrations = d.value;
+
+                        const tooltipText = `${type} (${year}): ${registrations} registrations`;
+
+                        d3.select("#barChartTooltip")
+                            .style("opacity", 1)
+                            .html(tooltipText)
+                            .style("left", (event.pageX + 10) + "px")
+                            .style("top", (event.pageY - 28) + "px");
+                    })
+                    .on("mouseout", function () {
+                        d3.select("#barChartTooltip").style("opacity", 0);
+                    });
+            }
+        }
+    }).catch(function (error) {
+        console.log(error);
+    });
+</script>
+</body>
+
+</html>

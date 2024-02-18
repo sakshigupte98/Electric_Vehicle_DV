@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>HEV Increment Count Stream Graph</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 20px;
+      display: grid;
+      grid-template-columns: 60% 40%; /* Two columns for graph and data table */
+      gap: 20px;
+    }
+    #streamGraph {
+      width: 100%;
+      height: 400px;
+    }
+    #legend {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      margin-bottom: 10px;
+    }
+    .legend {
+      display: flex;
+      align-items: center;
+      margin-right: 20px;
+    }
+    .legend .rect {
+      width: 18px;
+      height: 18px;
+      margin-right: 8px;
+      border: 1px solid #ccc;
+    }
+    .legend div {
+      font-size: 14px;
+    }
+    #data-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 20px;
+    }
+    #data-table th, #data-table td {
+      text-align: left;
+      padding: 8px;
+      border-bottom: 1px solid #ddd;
+    }
+    select {
+      margin-bottom: 10px;
+    }
+    .axis-labels text {
+      font-size: 12px;
+      fill: #555;
+    }
+  </style>
+</head>
+<body>
+
+<div id="streamGraphContainer">
+  <h2>Stream Graph</h2>
+  <div id="streamGraph"></div>
+  <div id="legend"></div>
+</div>
+<div id="data-table-container">
+  <label for="state-dropdown">Select State:</label>
+  <select id="state-dropdown"></select>
+
+  <!-- Removed the "Select Year" dropdown label and select element -->
+  <!--<label for="year-dropdown">Select Year:</label>
+  <select id="year-dropdown"></select>-->
+
+  <table id="data-table"></table>
+</div>
+
+<script src="https://code.jquery.com/jquery-3.6.4.min.js"></script>
+<script src="https://d3js.org/d3.v5.min.js"></script>
+
+<script>
+  // Fetch data from CSV file
+  d3.csv("HEV.csv").then(function(data) {
+
+    // Create Stream Graph
+    const margin = { top: 20, right: 20, bottom: 40, left: 60 }; // Increased left margin
+    const width = 600 - margin.left - margin.right;
+    const height = 400 - margin.top - margin.bottom;
+
+    const svg = d3.select("#streamGraph")
+      .append("svg")
+      .attr("width", width + margin.left + margin.right)
+      .attr("height", height + margin.top + margin.bottom)
+      .append("g")
+      .attr("transform", "translate(" + margin.left + "," + margin.top + ")");
+
+    // Create reusable data table
+    function createDataTable(tableData) {
+      const table = d3.select("#data-table");
+      table.selectAll("*").remove();
+
+      const thead = table.append("thead");
+      const tbody = table.append("tbody");
+
+      const columns = ['Property', 'Value'];
+
+      // append the header row
+      thead.append("tr")
+        .selectAll("th")
+        .data(columns)
+        .enter()
+        .append("th")
+        .text(d => d);
+
+      const rows = tbody.selectAll("tr")
+        .data(tableData)
+        .enter()
+        .append("tr");
+
+      rows.selectAll("td")
+        .data(d => [d.Property, d.Value])
+        .enter()
+        .append("td")
+        .text(d => d)
+        .style("text-align", "left")
+        .style("padding", "8px")
+        .style("border-bottom", "1px solid #ddd");
+    }
+
+    // Stack the data
+    const stack = d3.stack().keys(['HEV2016', 'HEV2017', 'HEV2018', 'HEV2019', 'HEV2020', 'HEV2021', 'HEV2022']);
+    const stackedData = stack(data);
+
+    // Set x, y, and color scales
+    const x = d3.scaleBand().domain(data.map(d => d.State)).range([0, width]).padding(0.1);
+    const yMax = d3.max(stackedData[stackedData.length - 1], d => d[1]);
+    const y = d3.scaleLinear().domain([0, yMax]).range([height, 0]);
+    const color = d3.scaleOrdinal(d3.schemeCategory10);
+
+    // Area generator
+    const area = d3.area()
+      .x(d => x(d.data.State))
+      .y0(d => y(d[0]))
+      .y1(d => y(d[1]));
+
+    // Draw the areas
+    svg.selectAll("path")
+      .data(stackedData)
+      .enter().append("path")
+      .attr("class", "area")
+      .style("fill", (d, i) => color(i))
+      .attr("d", area)
+      .on("mouseover", function (event, d) {
+        d3.selectAll("path").transition().duration(200).style("opacity", 0.5);
+        d3.select(this).transition().duration(200).style("opacity", 1);
+      })
+      .on("mouseout", function () {
+        d3.selectAll("path").transition().duration(200).style("opacity", 1);
+      });
+
+    // Add x-axis with rotated labels
+    svg.append("g")
+      .attr("transform", "translate(0," + height + ")")
+      .call(d3.axisBottom(x))
+      .selectAll("text")
+        .attr("transform", "translate(-10,0)rotate(-45)")
+        .style("text-anchor", "end");
+
+    svg.append("g")
+      .call(d3.axisLeft(y))
+      .selectAll(".axis-labels text")
+      .style("font-size", "12px")
+      .style("fill", "#555");
+
+    // Add legend
+    const legend = d3.select("#legend")
+      .selectAll("div")
+      .data(['HEV2016', 'HEV2017', 'HEV2018', 'HEV2019', 'HEV2020', 'HEV2021', 'HEV2022'])
+      .enter().append("div")
+      .attr("class", "legend");
+
+    legend.append("div")
+      .attr("class", "rect")
+      .style("background-color", (d, i) => color(i));
+
+    legend.append("div")
+      .text(d => d);
+
+    // Populate State Dropdown
+    const stateDropdown = d3.select("#state-dropdown");
+    stateDropdown.selectAll("option")
+      .data(data.map(d => d.State))
+      .enter().append("option")
+      .attr("value", d => d)
+      .text(d => d);
+
+    // Event listener for dropdown change
+    stateDropdown.on("change", updateData);
+
+    // Initial data update
+    updateData();
+
+    function updateData() {
+      const selectedState = stateDropdown.property("value");
+
+      const selectedData = data.find(d => d.State === selectedState);
+      const tableData = [{'Property': 'State', 'Value': selectedData.State}];
+
+      const years = Object.keys(selectedData).filter(key => key.startsWith('HEV'));
+      years.forEach(year => {
+        tableData.push({'Property': year, 'Value': selectedData[year]});
+      });
+
+      // Update table
+      createDataTable(tableData);
+    }
+  });
+</script>
+
+</body>
+</html>
